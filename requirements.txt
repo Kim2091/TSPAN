@@ -1,0 +1,12 @@
+av
+einops
+thop
+timm
+torch
+matplotlib
+numpy
+opencv-python
+onnx
+onnxruntime-gpu
+onnxconverter-common
+PyQt6
