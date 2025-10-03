@@ -32,7 +32,8 @@ For an easy-to-use experience with PyTorch or ONNX models, launch the GUI:
 python vsr_gui.py
 ```
 
-![image](https://github.com/user-attachments/assets/f750d416-1d25-499f-a4d7-d48488ba5811)
+<img width="602" height="698" alt="image" src="https://github.com/user-attachments/assets/744fd695-3fe8-4dc7-b52c-f3bca423e13c" />
+
 
 ### Command-Line Usage
 
@@ -73,6 +74,7 @@ python tools/pth_fp32_to_fp16.py --model path/to/tspan.pth --output path/to/outp
 - Uses [SCUNet](https://github.com/aaf6aa/SCUNet)'s respository as a base
 - Uses a modified version of [SPAN](https://github.com/hongyuanyu/SPAN)'s architecture
 - Uses the additions made in [both](https://github.com/aaf6aa/SCUNet) [TSCUNet](https://github.com/Kim2091/TSCUNet) repositories
+
 
 
 
