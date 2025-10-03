@@ -2,39 +2,51 @@ import torch
 import torch.onnx
 import argparse
 import os
+import sys
 import numpy as np
 import onnx
 from onnxconverter_common import float16
+import logging
 
-# Make sure the new network is imported
-from models.network_tspan import TSPAN
+# Add parent directory to path for imports
+script_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(script_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+logger = logging.getLogger(__name__)
+
+# Import the correct model architecture
+from models.temporal_span_arch import TemporalSPAN
 
 class TemporalSPANExportWrapper(torch.nn.Module):
     """
-    A simple wrapper for the TemporalSPAN model (named TSPAN) to handle
+    A simple wrapper for the TemporalSPAN model to handle
     the input shape transformation required for ONNX export. The rest of the
     script expects a 4D tensor, while the model's forward pass expects a 5D tensor.
     """
     def __init__(self, model):
         super().__init__()
         self.model = model
-        # Get clip_size from the model instance for the reshape operation
-        self.clip_size = model.clip_size
+        # Get num_frames from the model instance for the reshape operation
+        self.num_frames = model.num_frames
         # The number of channels per frame is fixed (e.g., RGB)
-        self.channels_per_frame = 3
+        self.channels_per_frame = model.in_channels
 
     def forward(self, x):
         """
         Takes a 4D tensor and reshapes it for the model.
         Args:
-            x: Input tensor with shape (batch, clip_size * channels, height, width)
+            x: Input tensor with shape (batch, num_frames * channels, height, width)
         """
         # Get dynamic shape info from the input tensor
         b, _, h, w = x.shape
         
         # Reshape to the 5D format the model's forward() method expects
-        # (batch, clip_size, channels, height, width)
-        reshaped_x = x.view(b, self.clip_size, self.channels_per_frame, h, w)
+        # (batch, num_frames, channels, height, width)
+        reshaped_x = x.view(b, self.num_frames, self.channels_per_frame, h, w)
         
         # Call the original model's forward pass with the correctly shaped tensor
         return self.model(reshaped_x)
@@ -70,8 +82,30 @@ def verify_onnx_output(model, onnx_path, test_input, rtol=1e-3, atol=1e-4):
         # Compare outputs
         logger.info(f"PyTorch output shape: {torch_output.shape}")
         logger.info(f"ONNX output shape:    {onnx_output.shape}")
+        
+        # Calculate detailed difference metrics
+        abs_diff = np.abs(torch_output - onnx_output)
+        rel_diff = abs_diff / (np.abs(torch_output) + 1e-8)
+        
+        logger.info("\n=== Difference Metrics ===")
+        logger.info(f"Absolute difference:")
+        logger.info(f"  Mean: {abs_diff.mean():.6e}")
+        logger.info(f"  Max:  {abs_diff.max():.6e}")
+        logger.info(f"  Min:  {abs_diff.min():.6e}")
+        
+        logger.info(f"\nRelative (percentage) difference:")
+        logger.info(f"  Mean: {rel_diff.mean() * 100:.4f}%")
+        logger.info(f"  Max:  {rel_diff.max() * 100:.4f}%")
+        logger.info(f"  Min:  {rel_diff.min() * 100:.4f}%")
+        
+        logger.info(f"\nOutput value ranges:")
+        logger.info(f"  PyTorch - Min: {torch_output.min():.6f}, Max: {torch_output.max():.6f}")
+        logger.info(f"  ONNX    - Min: {onnx_output.min():.6f}, Max: {onnx_output.max():.6f}")
+        
+        # Perform assertion
         np.testing.assert_allclose(torch_output, onnx_output, rtol=rtol, atol=atol)
-        logger.info("✓ ONNX output verified successfully against PyTorch output.")
+        logger.info("\n✓ ONNX output verified successfully against PyTorch output.")
+        logger.info(f"  (within rtol={rtol}, atol={atol})")
         return True
             
     except ImportError:
@@ -100,20 +134,85 @@ def convert_to_fp16(model_path, output_path=None):
         logger.error(f"❌ Error during FP16 conversion: {e}")
         return False
 
-def convert_model_to_onnx(model_path, onnx_path, input_shape, dynamic=False, verify=True, fp16=False):
+def load_model_from_state(state_dict, num_in_ch=3, num_out_ch=3, num_frames=5, 
+                          feature_channels=48, upscale=4, bias=True, history_channels=12):
     """
-    Convert a TemporalSPAN (TSPAN) PyTorch model to ONNX format.
+    Load a TemporalSPAN model from a state dict.
+    
+    Args:
+        state_dict: The state dictionary to load
+        num_in_ch: Number of input channels (default: 3 for RGB)
+        num_out_ch: Number of output channels (default: 3 for RGB)
+        num_frames: Number of frames in the input sequence
+        feature_channels: Number of feature channels
+        upscale: Upscaling factor
+        bias: Whether to use bias in conv layers
+        history_channels: Number of history channels
+    
+    Returns:
+        Loaded TemporalSPAN model
+    """
+    # Try to infer parameters from state dict if they exist
+    if 'params' in state_dict:
+        params = state_dict['params']
+        num_in_ch = params.get('num_in_ch', num_in_ch)
+        num_out_ch = params.get('num_out_ch', num_out_ch)
+        num_frames = params.get('num_frames', num_frames)
+        feature_channels = params.get('feature_channels', feature_channels)
+        upscale = params.get('upscale', upscale)
+        bias = params.get('bias', bias)
+        history_channels = params.get('history_channels', history_channels)
+        state_dict = state_dict['params_ema'] if 'params_ema' in state_dict else state_dict['params']
+    elif 'params_ema' in state_dict:
+        # Use params_ema if available
+        state_dict = state_dict['params_ema']
+    
+    # Infer scale from upsampler weight shape if available
+    if 'upsampler.0.weight' in state_dict:
+        upsampler_weight = state_dict['upsampler.0.weight']
+        # upsampler output channels = num_out_ch * (scale^2)
+        detected_scale = int((upsampler_weight.shape[0] / num_out_ch) ** 0.5)
+        logger.info(f"Detected upscale factor from model weights: {detected_scale}x")
+        upscale = detected_scale
+    
+    num_frames = 5
+    feature_channels = 32
+    
+    # Create the model with the correct parameters
+    model = TemporalSPAN(
+        num_in_ch=num_in_ch,
+        num_out_ch=num_out_ch,
+        num_frames=num_frames,
+        feature_channels=feature_channels,
+        upscale=upscale,
+        bias=bias,
+        history_channels=history_channels
+    )
+    
+    # Load the state dict
+    model.load_state_dict(state_dict, strict=False)
+    
+    return model
+
+def convert_model_to_onnx(model_path, onnx_path, input_shape, dynamic=False, verify=True, fp16=False,
+                         num_in_ch=3, num_out_ch=3, num_frames=5, feature_channels=48, 
+                         upscale=4, bias=True, history_channels=12):
+    """
+    Convert a TemporalSPAN PyTorch model to ONNX format.
     """
     logger.info(f"Loading PyTorch model from: {model_path}")
     device = torch.device('cpu')
     
     # Load model state dict and initialize the model
     state_dict = torch.load(model_path, map_location=device)
-    model = TSPAN(state=state_dict)
+    model = load_model_from_state(
+        state_dict, num_in_ch, num_out_ch, num_frames, 
+        feature_channels, upscale, bias, history_channels
+    )
     model.eval()
     model = model.to(device)
     
-    logger.info(f"Model Info: clip_size={model.clip_size}, scale={model.scale}x")
+    logger.info(f"Model Info: num_frames={model.num_frames}, upscale={upscale}x")
     
     # Create the export wrapper around the loaded model
     export_model = TemporalSPANExportWrapper(model)
@@ -168,6 +267,12 @@ if __name__ == "__main__":
     parser.add_argument("--height", type=int, default=256, help="Input height for dummy tensor")
     parser.add_argument("--width", type=int, default=256, help="Input width for dummy tensor")
     parser.add_argument("--batch", type=int, default=1, help="Batch size for dummy tensor")
+    parser.add_argument("--num-frames", type=int, default=5, help="Number of frames in the input sequence")
+    parser.add_argument("--num-in-ch", type=int, default=3, help="Number of input channels")
+    parser.add_argument("--num-out-ch", type=int, default=3, help="Number of output channels")
+    parser.add_argument("--feature-channels", type=int, default=48, help="Number of feature channels")
+    parser.add_argument("--upscale", type=int, default=4, help="Upscaling factor")
+    parser.add_argument("--history-channels", type=int, default=12, help="Number of history channels")
     parser.add_argument("--dynamic", action="store_true", help="Export with dynamic axes for batch, height, and width")
     parser.add_argument("--no-verify", action="store_true", help="Skip ONNX output verification against PyTorch")
     parser.add_argument("--fp16", action="store_true", help="Also create an FP16 version of the model")
@@ -177,14 +282,8 @@ if __name__ == "__main__":
         base_name = os.path.splitext(os.path.basename(args.model))[0]
         args.output = f"{base_name}.onnx"
     
-    # Temporarily load the model to get its clip_size
-    logger.info("Loading model to determine clip_size...")
-    temp_state = torch.load(args.model, map_location='cpu')
-    clip_size = TSPAN(state=temp_state).clip_size
-    del temp_state
-    
     # Define the 4D input shape the script and ONNX model will use
-    input_shape = (args.batch, clip_size * 3, args.height, args.width)
+    input_shape = (args.batch, args.num_frames * args.num_in_ch, args.height, args.width)
     
     convert_model_to_onnx(
         args.model, 
@@ -192,5 +291,12 @@ if __name__ == "__main__":
         input_shape,
         args.dynamic,
         not args.no_verify,
-        args.fp16
+        args.fp16,
+        args.num_in_ch,
+        args.num_out_ch,
+        args.num_frames,
+        args.feature_channels,
+        args.upscale,
+        True,  # bias
+        args.history_channels
     )

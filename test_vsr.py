@@ -1,16 +1,14 @@
 import argparse
-import cv2
 import math
 import os.path
 import torch
-import av
 
 from datetime import timedelta
-from fractions import Fraction
 
 from utils import utils_image as util
 from utils.logger import logger
 from utils.utils_video import VideoDecoder, VideoEncoder
+from models.temporal_span_arch import TemporalSPAN as net
 
 if not torch.cuda.is_available():
     logger.error('CUDA is not available. Exiting...')
@@ -65,15 +63,39 @@ def main():
     # ----------------------------------------
     # load model
     # ----------------------------------------
-    from models.network_tspan import TSPAN as net
-    model = net(state=torch.load(model_path))
+    # Load checkpoint
+    checkpoint = torch.load(model_path)
+    state_dict = checkpoint.get('params_ema', checkpoint)
+
+    # Infer scale from checkpoint
+    if 'upsampler.0.weight' in state_dict:
+        upsampler_weight = state_dict['upsampler.0.weight']
+        scale = int((upsampler_weight.shape[0] / 3) ** 0.5)
+    else:
+        scale = 4  # default
+
+    num_frames = 5  # default
+
+    clip_size = num_frames
+
+    # Create model with inferred parameters
+    model = net(
+        num_in_ch=3,
+        num_out_ch=3,
+        num_frames=num_frames,
+        feature_channels=48,
+        upscale=scale,
+        bias=True,
+        history_channels=12,
+    )
+
+    # Load state dict
+    model.load_state_dict(state_dict, strict=False)
     model.eval()
-    scale = model.scale
-    clip_size = model.clip_size
 
     for k, v in model.named_parameters():
         v.requires_grad = False
-    model = model.to(default_device)
+    model = model.to(default_device)    
     
     # warmup
     input_shape = (1, clip_size, 3, 540, 720)
@@ -85,9 +107,6 @@ def main():
     logger.info(f'model_name: {model_name}')
     logger.info(f'scale: {scale}x')
     logger.info(f'Input video: {L_path}')
-
-    #num_parameters = sum(p.numel() for p in model.parameters())
-    #logger.info(f'#Params: {num_parameters/10**6:.4f} [M]')
 
     video_decoder = VideoDecoder(L_path)
     img_count = len(video_decoder)
