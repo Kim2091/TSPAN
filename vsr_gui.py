@@ -322,28 +322,25 @@ class VSRGUIApp(QMainWindow):
             
     def stop_processing(self):
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
-            self.log_box.append("\nStopping process gracefully with CTRL+C...")
+            self.log_box.append("\nStopping process...")
             
             try:
-                # Get the process ID
-                pid = self.process.processId()
-                
-                if sys.platform == 'win32':
-                    # On Windows, send CTRL+C signal
-                    import ctypes
-                    kernel32 = ctypes.WinDLL('kernel32')
-                    kernel32.GenerateConsoleCtrlEvent(0, 0)  # 0 is CTRL_C_EVENT, send to all processes in console group
-                else:
-                    # On Unix-like systems, send SIGINT (equivalent to CTRL+C)
-                    os.kill(pid, signal.SIGINT)
-                    
-                # Don't wait for process to finish - let the process handle CTRL+C on its own
-                # Don't call process_finished() here - let the process exit normally
-                
-            except Exception as e:
-                self.log_box.append(f"Error while sending CTRL+C: {str(e)}")
-                # If we can't send CTRL+C, do a simple terminate
+                # Terminate the process gracefully
                 self.process.terminate()
+                
+                # Give it a few seconds to terminate gracefully
+                if not self.process.waitForFinished(3000):
+                    # If it didn't terminate, kill it forcefully
+                    self.log_box.append("Process did not terminate gracefully, forcing kill...")
+                    self.process.kill()
+                    
+            except Exception as e:
+                self.log_box.append(f"Error while stopping process: {str(e)}")
+                # If we can't terminate, try to kill it
+                try:
+                    self.process.kill()
+                except:
+                    pass
     
     def handle_stdout(self):
         data = self.process.readAllStandardOutput()
