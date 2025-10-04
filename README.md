@@ -1,6 +1,8 @@
 # TSPAN
 TSPAN (Temporal SPAN) is a custom arch based on the [original SPAN architecture](https://github.com/hongyuanyu/SPAN). This modification aims to provide efficient and accessible temporal video upscaling. It supports PyTorch, ONNX, and TensorRT!
 
+This is the inference code. To train a model, you'll want to use [traiNNer-redux](https://github.com/Kim2091/traiNNer-redux-1/) with the TSPAN config and a video dataset. To make a video dataset, try my other tool, [video destroyer](https://github.com/Kim2091/video-destroyer).
+
 ## Getting Started
 
 1.  **Clone the repository**:
@@ -74,6 +76,7 @@ python tools/pth_fp32_to_fp16.py --model path/to/tspan.pth --output path/to/outp
 - Uses [SCUNet](https://github.com/aaf6aa/SCUNet)'s respository as a base
 - Uses a modified version of [SPAN](https://github.com/hongyuanyu/SPAN)'s architecture
 - Uses the additions made in [both](https://github.com/aaf6aa/SCUNet) [TSCUNet](https://github.com/Kim2091/TSCUNet) repositories
+
 
 
 
