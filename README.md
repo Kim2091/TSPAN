@@ -67,15 +67,11 @@ python tools/convert_to_onnx.py --model pretrained_models/model.pth --output mod
 -   `--dynamic`: Create a model that supports various input sizes.
 -   `--fp16`: Convert the model to FP16 for a speed boost.
 
-**Convert FP32 model to FP16**:
-```bash
-python tools/pth_fp32_to_fp16.py --model path/to/tspan.pth --output path/to/output.pth
-```
-
 ## Credits (thanks all!)
 - Uses [SCUNet](https://github.com/aaf6aa/SCUNet)'s respository as a base
 - Uses a modified version of [SPAN](https://github.com/hongyuanyu/SPAN)'s architecture
 - Uses the additions made in [both](https://github.com/aaf6aa/SCUNet) [TSCUNet](https://github.com/Kim2091/TSCUNet) repositories
+
 
 
 
