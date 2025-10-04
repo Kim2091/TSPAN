@@ -7,7 +7,7 @@ This guide helps you use TSPAN with TensorRT for accelerated video upscaling.
 1. Set up VapourSynth following [pifroggi's guide](https://github.com/pifroggi/vapoursynth-stuff/blob/main/docs/vapoursynth-portable-setup-tutorial.md), steps 1-4
 2. Download and extract `vsmlrt-windows-x64-tensorrt.[version].7z` from [vs-mlrt releases](https://github.com/AmusementClub/vs-mlrt/releases) to your `vs-plugins` directory
 3. Get the model:
-   - Download pre-converted ONNX from [releases](https://github.com/Kim2091/TSPAN/releases), or
+   - Download pre-converted ONNX from [releases](https://github.com/Kim2091/Kim2091-Models/releases/tag/2x-AnimeUp), or
    - Convert your own using `convert_to_onnx.py` (see script for detailed options)
 
 ## Usage
@@ -31,4 +31,5 @@ This guide helps you use TSPAN with TensorRT for accelerated video upscaling.
 ```bash
 vspipe -c y4m ".\vapoursynth_script.vpy" - | ffmpeg -i - -c:v hevc_nvenc -qp 0 -preset p5 -tune lossless "output.mkv"
 ```
+
 
