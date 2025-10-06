@@ -176,7 +176,7 @@ def load_model_from_state(state_dict, num_in_ch=3, num_out_ch=3, num_frames=5,
         upscale = detected_scale
     
     num_frames = 5
-    feature_channels = 32
+    feature_channels = 48
     
     # Create the model with the correct parameters
     model = TemporalSPAN(
@@ -299,4 +299,5 @@ if __name__ == "__main__":
         args.upscale,
         True,  # bias
         args.history_channels
+
     )
