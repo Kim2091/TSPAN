@@ -34,3 +34,9 @@ vspipe -c y4m ".\vapoursynth_script.vpy" - | ffmpeg -i - -c:v hevc_nvenc -qp 0 -
 
 
 
+
+## Packaged Vapourkit filter
+
+The matching [Vapourkit filter](../vapourkit/README.md) includes configurable engine path, precision
+and stream count. Run `python package-vapoursynth.py` from the repository root to
+package it with the VapourSynth example and installation instructions.

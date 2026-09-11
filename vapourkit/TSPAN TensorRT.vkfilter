@@ -1,0 +1,48 @@
+name = "TSPAN TensorRT"
+category = "Upscaling"
+description = "Five-frame video upscaling with TSPAN."
+code = """
+# Supply a TSPAN TensorRT engine built for five RGB frames at the input resolution.
+# The fp16 setting must match the engine's input/output binding type.
+engine_path = {{engine_path}}
+num_streams = {{num_streams}}
+fp16 = {{fp16}}
+if not engine_path:
+    raise ValueError("TSPAN: select a TensorRT engine file.")
+if clip.format is None or clip.format.color_family not in (vs.RGB, vs.YUV):
+    raise ValueError("TSPAN requires constant-format RGB or YUV input.")
+source_format = clip.format
+rgb_format = vs.RGBH if fp16 else vs.RGBS
+if source_format.color_family == vs.RGB:
+    rgb = core.resize.Bilinear(clip, format=rgb_format)
+else:
+    rgb = core.resize.Bilinear(clip, format=rgb_format, matrix_in_s=default_matrix)
+
+# Clamp temporal neighbours at both ends, including one- and two-frame clips.
+length = rgb.num_frames
+m1 = (rgb[0] + rgb)[:length]
+m2 = (rgb[0] * 2 + rgb)[:length]
+p1 = (rgb + rgb[-1])[1:1 + length]
+p2 = (rgb + rgb[-1] * 2)[2:2 + length]
+result = core.trt.Model([m2, m1, rgb, p1, p2], engine_path=engine_path,
+                        num_streams=num_streams)
+if source_format.color_family == vs.RGB:
+    clip = core.resize.Bilinear(result, format=source_format.id)
+else:
+    clip = core.resize.Bilinear(result, format=source_format.id, matrix_s=default_matrix)
+"""
+
+[variables.engine_path]
+type = "string"
+default = ""
+description = "Path to the TSPAN TensorRT engine built for this input resolution."
+
+[variables.fp16]
+type = "boolean"
+default = false
+description = "Use RGBH for engines with FP16 input/output bindings; leave off for FP32 bindings."
+
+[variables.num_streams]
+type = "number"
+default = 1
+description = "Number of TensorRT inference streams."
