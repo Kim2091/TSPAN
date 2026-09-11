@@ -86,9 +86,3 @@ python tools/convert_to_onnx.py --model pretrained_models/model.pth --output mod
 
 
 
-
-## Packaged Vapourkit filter
-
-The matching [Vapourkit filter](vapourkit/README.md) includes configurable engine path, precision
-and stream count. Run `python package-vapoursynth.py` from the repository root to
-package it with the VapourSynth example and installation instructions.
